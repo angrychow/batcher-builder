@@ -1,0 +1,29 @@
+receivers:
+  otlp: 
+    protocols:
+      http:
+      grpc:
+        
+processors:
+  batch:
+
+exporters:
+  # NOTE: Prior to v0.86.0 use `logging` instead of `debug`.
+  debug:
+    verbosity: detailed
+  prefix_compressed_exporter:
+    endpoint: http://127.0.0.1:14318
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prefix_compressed_exporter, debug]
+  telemetry:
+    logs:
+      level: debug
+    metrics:
+      address: 0.0.0.0:8887
