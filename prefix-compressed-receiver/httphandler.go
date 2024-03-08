@@ -85,11 +85,15 @@ func revertTraces(iters map[string]interface{}) {
 							attributes = append(attributes, Attribute_{
 								Key: key[5:],
 								Value: (func() interface{} {
-									if item[key].(map[string]interface{})["Value"] == "NONE" {
+									if item[key] == "NONE" {
 										return nil
-									} else {
-										return item[key].(map[string]interface{})["Value"]
 									}
+									t, ok := item[key].(map[string]interface{})
+									if !ok {
+										return nil
+									}
+									return t["Value"]
+
 								})(),
 							})
 							delete(item, key)
