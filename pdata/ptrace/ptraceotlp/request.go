@@ -163,54 +163,66 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 					}
 					newSpans = append(newSpans, iter)
 				}
-				for index, attrname := range attrList[temp["name"].(string)] {
-					// toBePush := make([]TrieSpan, 0)
-					var next *TrieSpan = nil
-					val_, _ := goJson.Marshal(temp[attrname])
-					val := string(val_)
-					for _, son := range iter.Son {
-						if temp[attrname] == nil {
-							if son.(*TrieSpan).AttrValue == "NONE" {
-								next = son.(*TrieSpan)
-								break
-							}
-						} else {
-							// if goJson.Marshal(son.(*TrieSpan).AttrValue) ==
-							val_, _ := goJson.Marshal(son.(*TrieSpan).AttrValue)
-							valIter := string(val_)
-							// fmt.Println(valIter, val)
-							if valIter == val {
-								next = son.(*TrieSpan)
-								break
-							}
-						}
-					}
-					if next == nil {
-						next = &TrieSpan{
-							AttrName: attrname,
-							AttrValue: (func() interface{} {
-								if temp[attrname] == nil {
-									return "NONE"
-								} else {
-									return temp[attrname]
+				if len(attrList[temp["name"].(string)]) != 0 {
+					for index, attrname := range attrList[temp["name"].(string)] {
+						// toBePush := make([]TrieSpan, 0)
+						var next *TrieSpan = nil
+						val_, _ := goJson.Marshal(temp[attrname])
+						val := string(val_)
+						for _, son := range iter.Son {
+							if temp[attrname] == nil {
+								if son.(*TrieSpan).AttrValue == "NONE" {
+									next = son.(*TrieSpan)
+									break
 								}
-							})(),
-							Son: make([]interface{}, 0),
-						}
-						iter.Son = append(iter.Son, next)
-					}
-					iter = next
-					if index == len(attrList[temp["name"].(string)])-1 {
-						toBePush := make(map[string]interface{})
-						for key := range temp {
-							if key == "name" || attrExist[temp["name"].(string)][key] {
-								continue
+							} else {
+								// if goJson.Marshal(son.(*TrieSpan).AttrValue) ==
+								val_, _ := goJson.Marshal(son.(*TrieSpan).AttrValue)
+								valIter := string(val_)
+								// fmt.Println(valIter, val)
+								if valIter == val {
+									next = son.(*TrieSpan)
+									break
+								}
 							}
-							toBePush[key] = temp[key]
 						}
-						iter.Son = append(iter.Son, toBePush)
-						continue
+						if next == nil {
+							next = &TrieSpan{
+								AttrName: attrname,
+								AttrValue: (func() interface{} {
+									if temp[attrname] == nil {
+										return "NONE"
+									} else {
+										return temp[attrname]
+									}
+								})(),
+								Son: make([]interface{}, 0),
+							}
+							iter.Son = append(iter.Son, next)
+						}
+						iter = next
+						if index == len(attrList[temp["name"].(string)])-1 {
+							toBePush := make(map[string]interface{})
+							for key := range temp {
+								if key == "name" || attrExist[temp["name"].(string)][key] {
+									continue
+								}
+								toBePush[key] = temp[key]
+							}
+							iter.Son = append(iter.Son, toBePush)
+							continue
+						}
 					}
+				} else {
+					toBePush := make(map[string]interface{})
+					for key := range temp {
+						if key == "name" || attrExist[temp["name"].(string)][key] {
+							continue
+						}
+						toBePush[key] = temp[key]
+					}
+					iter.Son = append(iter.Son, toBePush)
+					continue
 				}
 			}
 			// fmt.Println(newSpans)
