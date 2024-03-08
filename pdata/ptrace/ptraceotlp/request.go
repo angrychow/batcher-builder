@@ -178,7 +178,7 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 							// if goJson.Marshal(son.(*TrieSpan).AttrValue) ==
 							val_, _ := goJson.Marshal(son.(*TrieSpan).AttrValue)
 							valIter := string(val_)
-							fmt.Println(valIter, val)
+							// fmt.Println(valIter, val)
 							if valIter == val {
 								next = son.(*TrieSpan)
 								break
@@ -213,7 +213,7 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 					}
 				}
 			}
-			fmt.Println(newSpans)
+			// fmt.Println(newSpans)
 			// sspan.Spans = []interface{}
 			sspan.Spans = make([]interface{}, 0)
 			for _, v := range newSpans {
