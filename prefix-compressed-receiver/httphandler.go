@@ -88,6 +88,10 @@ func revertTraces(iters map[string]interface{}) {
 									if item[key] == "NONE" {
 										return nil
 									}
+									str, ok := item[key].(string)
+									if ok {
+										return str
+									}
 									t, ok := item[key].(map[string]interface{})
 									if !ok {
 										return nil
