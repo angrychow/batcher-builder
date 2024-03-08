@@ -83,8 +83,14 @@ func revertTraces(iters map[string]interface{}) {
 					for key := range item {
 						if regExp.MatchString(key) {
 							attributes = append(attributes, Attribute_{
-								Key:   key[5:],
-								Value: item[key].(map[string]interface{})["Value"],
+								Key: key[5:],
+								Value: (func() interface{} {
+									if item[key].(map[string]interface{})["Value"] == "NONE" {
+										return nil
+									} else {
+										return item[key].(map[string]interface{})["Value"]
+									}
+								})(),
 							})
 							delete(item, key)
 						}

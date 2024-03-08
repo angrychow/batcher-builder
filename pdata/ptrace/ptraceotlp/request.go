@@ -229,8 +229,11 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 	// revertTraces(t)
 	// v, _ = goJson.Marshal((t))
 	// fmt.Println(string(v))
-	fmt.Println("\n\n\n\n ------- \n\n\n\n")
-	fmt.Println("\n\n\n\n ------- \n\n\n\n")
+	// fmt.Println("\n\n\n\n ------- \n\n\n\n")
+	// fmt.Println("\n\n\n\n ------- \n\n\n\n")
+	origMarshalData, _ := goJson.Marshal(ms.orig)
+	fmt.Println(string(origMarshalData))
+	fmt.Printf("compression rate: %f \n", float32(len(v))/float32(len(origMarshalData)))
 
 	// if err := json.Marshal(&buf, ms.orig); err != nil {
 	// 	return nil, err
