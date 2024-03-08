@@ -64,6 +64,18 @@ func revertTraces(iters map[string]interface{}) {
 
 	for _, resourceSpan := range iters["resourceSpans"].([]interface{}) {
 		iter := resourceSpan.(map[string]interface{})
+		resources, ok := iter["resource"].(map[string]interface{})
+		if ok {
+			attributes, ok := resources["attributes"].([]interface{})
+			if ok {
+				for _, attribute_ := range attributes {
+					fmt.Printf("Success! \n")
+					fmt.Println(attribute_)
+					attribute := attribute_.(map[string]interface{})
+					attribute["value"] = (attribute["value"].(map[string]interface{}))["Value"]
+				}
+			}
+		}
 		if iter["scopeSpans"] == nil {
 			return
 		}
