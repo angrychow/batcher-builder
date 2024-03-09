@@ -15,6 +15,8 @@ import (
 	prefix_compressed_exporter "angrychow/otel/prefix-compressed-exporter"
 
 	prefix_compressed_receiver "angrychow/otel/prefix-compressed-receiver"
+
+	jaegerreceiver "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/jaegerreceiver"
 )
 
 func components() (otelcol.Factories, error) {
@@ -29,6 +31,7 @@ func components() (otelcol.Factories, error) {
 	factories.Receivers, err = receiver.MakeFactoryMap(
 		otlpreceiver.NewFactory(),
 		prefix_compressed_receiver.NewFactory(),
+		jaegerreceiver.NewFactory(),
 	)
 	if err != nil {
 		return otelcol.Factories{}, err
