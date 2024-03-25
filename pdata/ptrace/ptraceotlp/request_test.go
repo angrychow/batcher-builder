@@ -12,7 +12,6 @@ import (
 )
 
 var _ json.Unmarshaler = ExportRequest{}
-var _ json.Marshaler = ExportRequest{}
 
 var tracesRequestJSON = []byte(`
 	{
@@ -49,7 +48,7 @@ func TestRequestJSON(t *testing.T) {
 	assert.NoError(t, tr.UnmarshalJSON(tracesRequestJSON))
 	assert.Equal(t, "test_span", tr.Traces().ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Name())
 
-	got, err := tr.MarshalJSON()
+	got, _, err := tr.MarshalJSON()
 	assert.NoError(t, err)
 	assert.Equal(t, strings.Join(strings.Fields(string(tracesRequestJSON)), ""), string(got))
 }

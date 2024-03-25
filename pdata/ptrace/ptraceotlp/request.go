@@ -6,6 +6,8 @@ package ptraceotlp // import "go.opentelemetry.io/collector/pdata/ptrace/ptraceo
 import (
 	goJson "encoding/json"
 	"fmt"
+	"math/rand"
+	"strconv"
 
 	"go.opentelemetry.io/collector/pdata/internal"
 	otlpcollectortrace "go.opentelemetry.io/collector/pdata/internal/data/protogen/collector/trace/v1"
@@ -14,6 +16,8 @@ import (
 )
 
 var jsonUnmarshaler = &ptrace.JSONUnmarshaler{}
+var attrNameDictionary = make(map[string]string)
+var dictCounter = 0
 
 // ExportRequest represents the request for gRPC/HTTP client/server.
 // It's a wrapper for ptrace.Traces data.
@@ -56,14 +60,16 @@ func (ms ExportRequest) UnmarshalProto(data []byte) error {
 }
 
 type TrieSpan struct {
-	AttrName  string
-	AttrValue interface{}
-	Son       []interface{}
+	AN    string
+	AV    interface{}
+	Son   []interface{}
+	Count int `json:"-"`
 }
 
 type ScopeSpan struct {
 	SchemaUrl string        `json:"schemaUrl,omitempty"`
 	Scope     interface{}   `json:"scope,omitempty"`
+	TOffset   uint64        `json:"tOffset,omitempty"`
 	Spans     []interface{} `json:"spans,omitempty"`
 }
 
@@ -73,12 +79,26 @@ type ExportData struct {
 	ScopeSpans []*ScopeSpan `json:"scopeSpans,omitempty"`
 }
 
+type UpdatesEntry struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+var trieSpanProto []*TrieSpan = nil
+var attrList = make(map[string][]string, 0)
+var attrExist = make(map[string]map[string]bool)
+var recordsList = make(map[string]int, 0) // accumulating calculate
+var totalRecord = 0
+
 // MarshalJSON marshals ExportRequest into JSON bytes.
-func (ms ExportRequest) MarshalJSON() ([]byte, error) {
+func (ms ExportRequest) MarshalJSON() ([]byte, []UpdatesEntry, error) {
+
+	isUpdateDictionary := false
+
+	updatesEntry := make([]UpdatesEntry, 0)
 	// var buf bytes.Buffer
-	var attrList = make(map[string][]string, 0)
+
 	// var nameList = make([]string, 0)
-	var attrExist = make(map[string]map[string]bool)
 	// var nameExist = make(map[string]bool)
 	// ms.orig.ResourceSpans[0].ScopeSpans[0].Spans[0]
 	// ms.orig.ResourceSpans[0].ScopeSpans[0].Spans[0].
@@ -87,6 +107,8 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 	}{
 		ResourceSpans: make([]ExportData, 0),
 	}
+
+	// the following step is to flat the attributes object into attr_name format
 
 	for _, rspan := range ms.orig.ResourceSpans {
 		rspanNew := ExportData{
@@ -101,83 +123,131 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 				Scope:     sspan.Scope,
 				Spans:     make([]interface{}, 0),
 			}
+			var minTime uint64 = 1<<63 - 1
 
 			for _, span := range sspan.Spans {
+				totalRecord++
+				recordsList[span.Name]++
 				spanBytes, err := goJson.Marshal(span)
 				if err != nil {
 					fmt.Println("JSON encoding error:", err)
 					continue
 				}
-
 				var spanMap map[string]interface{}
 				err = goJson.Unmarshal(spanBytes, &spanMap)
+				spanMap["stun"] = span.StartTimeUnixNano
+				spanMap["etun"] = span.EndTimeUnixNano
+				delete(spanMap, "start_time_unix_nano")
+				delete(spanMap, "end_time_unix_nano")
 				if err != nil {
 					fmt.Println("JSON decoding error:", err)
 					continue
 				}
-
 				if span.Attributes != nil {
 					for _, attribute := range span.Attributes {
-						spanMap["attr_"+attribute.Key] = attribute.Value
+
+						if _, exists := attrNameDictionary[attribute.Key]; !exists {
+							isUpdateDictionary = true
+							attrNameDictionary[attribute.Key] = strconv.Itoa(dictCounter)
+							updatesEntry = append(updatesEntry, UpdatesEntry{
+								Key:   attribute.Key,
+								Value: strconv.Itoa(dictCounter),
+							})
+							dictCounter++
+						}
+
+						spanMap["attr_"+string(attrNameDictionary[attribute.Key])] = attribute.Value
 						if attrExist[span.Name] == nil {
 							attrExist[span.Name] = make(map[string]bool)
 						}
-						if !attrExist[span.Name]["attr_"+attribute.Key] {
-							attrExist[span.Name]["attr_"+attribute.Key] = true
+						if !attrExist[span.Name]["attr_"+string(attrNameDictionary[attribute.Key])] {
+							attrExist[span.Name]["attr_"+string(attrNameDictionary[attribute.Key])] = true
 							if attrList[span.Name] == nil {
 								attrList[span.Name] = make([]string, 0)
 							}
-							attrList[span.Name] = append(attrList[span.Name], "attr_"+attribute.Key)
+							attrList[span.Name] = append(attrList[span.Name], "attr_"+string(attrNameDictionary[attribute.Key]))
 						}
 						// attribute.Key
 					}
 					delete(spanMap, "attributes")
 				}
-
+				minTime = min(span.StartTimeUnixNano, minTime)
 				sspanNew.Spans = append(sspanNew.Spans, spanMap)
 			}
-
+			for _, span_ := range sspanNew.Spans {
+				span := span_.(map[string]interface{})
+				span["stun"] = span["stun"].(uint64) - minTime
+				span["etun"] = span["etun"].(uint64) - minTime
+			}
+			sspanNew.TOffset = minTime
 			rspanNew.ScopeSpans = append(rspanNew.ScopeSpans, sspanNew)
 		}
 
 		data.ResourceSpans = append(data.ResourceSpans, rspanNew)
 	}
 
+	// the following step is to turn span into trie format
+
 	for _, rspan := range data.ResourceSpans {
 		for _, sspan := range rspan.ScopeSpans {
+			if trieSpanProto == nil {
+				trieSpanProto = make([]*TrieSpan, 0)
+			}
 			newSpans := make([]*TrieSpan, 0)
 			for _, span := range sspan.Spans {
+				abnormalDetect := false
 				temp := span.(map[string]interface{})
 				var iter *TrieSpan = nil
-				for _, trieSon := range newSpans {
-					if trieSon.AttrValue == temp["name"] {
+				var iterProto *TrieSpan = nil
+				for _, trieSon := range newSpans { // find next hop
+					if trieSon.AV == temp["name"] {
 						iter = trieSon
 						break
 					}
 				}
-				if iter == nil {
+				for _, spanProto := range trieSpanProto { // do the same thing in trieSpanProto
+					if spanProto.AV == temp["name"] {
+						iterProto = spanProto
+						spanProto.Count += 1
+						break
+					}
+				}
+				if iter == nil { // if didn't find, create it
 					iter = &TrieSpan{
-						AttrName:  "name",
-						AttrValue: temp["name"],
-						Son:       make([]interface{}, 0),
+						AN:  "name",
+						AV:  temp["name"],
+						Son: make([]interface{}, 0),
 					}
 					newSpans = append(newSpans, iter)
+				}
+				if iterProto == nil { // if didn't find, create it, do it in trieSpanProto too.
+					iterProto = &TrieSpan{
+						AN:    "name",
+						AV:    temp["name"],
+						Son:   make([]interface{}, 0),
+						Count: 1,
+					}
+					trieSpanProto = append(trieSpanProto, iterProto)
+				}
+				if recordsList[temp["name"].(string)] > 0 && totalRecord/len(attrList)/10 >= recordsList[temp["name"].(string)] { // rare name
+					abnormalDetect = true
 				}
 				if len(attrList[temp["name"].(string)]) != 0 {
 					for index, attrname := range attrList[temp["name"].(string)] {
 						// toBePush := make([]TrieSpan, 0)
 						var next *TrieSpan = nil
+						var nextProto *TrieSpan = nil
 						val_, _ := goJson.Marshal(temp[attrname])
 						val := string(val_)
 						for _, son := range iter.Son {
 							if temp[attrname] == nil {
-								if son.(*TrieSpan).AttrValue == "NONE" {
+								if son.(*TrieSpan).AV == "NONE" {
 									next = son.(*TrieSpan)
 									break
 								}
 							} else {
-								// if goJson.Marshal(son.(*TrieSpan).AttrValue) ==
-								val_, _ := goJson.Marshal(son.(*TrieSpan).AttrValue)
+								// if goJson.Marshal(son.(*TrieSpan).AV) ==
+								val_, _ := goJson.Marshal(son.(*TrieSpan).AV)
 								valIter := string(val_)
 								// fmt.Println(valIter, val)
 								if valIter == val {
@@ -186,10 +256,29 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 								}
 							}
 						}
+						for _, son := range iterProto.Son {
+							if temp[attrname] == nil {
+								if son.(*TrieSpan).AV == "NONE" {
+									nextProto = son.(*TrieSpan)
+									break
+								}
+							} else {
+								// if goJson.Marshal(son.(*TrieSpan).AV) ==
+								// fmt.Println(son)
+								val_, _ := goJson.Marshal(son.(*TrieSpan).AV)
+								valIter := string(val_)
+								// fmt.Println(valIter, val)
+								if valIter == val {
+									nextProto = son.(*TrieSpan)
+									nextProto.Count += 1
+									break
+								}
+							}
+						}
 						if next == nil {
 							next = &TrieSpan{
-								AttrName: attrname,
-								AttrValue: (func() interface{} {
+								AN: attrname,
+								AV: (func() interface{} {
 									if temp[attrname] == nil {
 										return "NONE"
 									} else {
@@ -200,8 +289,34 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 							}
 							iter.Son = append(iter.Son, next)
 						}
+						if nextProto == nil {
+							nextProto = &TrieSpan{
+								AN: attrname,
+								AV: (func() interface{} {
+									if temp[attrname] == nil {
+										return "NONE"
+									} else {
+										return temp[attrname]
+									}
+								})(),
+								Son:   make([]interface{}, 0),
+								Count: 1,
+							}
+							iterProto.Son = append(iterProto.Son, nextProto)
+						}
+						// INDICATE ABNORMAL RATE !!!!!!!
+						if len(iterProto.Son) > 0 && recordsList[temp["name"].(string)]/len(iterProto.Son)/10 >= nextProto.Count {
+							abnormalDetect = true
+						}
+
 						iter = next
+						iterProto = nextProto
+
 						if index == len(attrList[temp["name"].(string)])-1 {
+							rand := rand.Int() % 2 // sample rate : 50%
+							if rand != 0 && !abnormalDetect {
+								continue
+							}
 							toBePush := make(map[string]interface{})
 							for key := range temp {
 								if key == "name" || attrExist[temp["name"].(string)][key] {
@@ -210,10 +325,14 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 								toBePush[key] = temp[key]
 							}
 							iter.Son = append(iter.Son, toBePush)
+							if abnormalDetect {
+								fmt.Println("abnormal detect")
+								fmt.Println(temp)
+							}
 							continue
 						}
 					}
-				} else {
+				} else { // no attributes
 					toBePush := make(map[string]interface{})
 					for key := range temp {
 						if key == "name" || attrExist[temp["name"].(string)][key] {
@@ -250,7 +369,12 @@ func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 	// if err := json.Marshal(&buf, ms.orig); err != nil {
 	// 	return nil, err
 	// }
-	return v, nil
+	if isUpdateDictionary {
+		return v, updatesEntry, nil
+	} else {
+		return v, nil, nil
+	}
+
 }
 
 // UnmarshalJSON unmarshalls ExportRequest from JSON bytes.

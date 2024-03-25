@@ -80,6 +80,10 @@ func createTracesExporter(
 	if err != nil {
 		return nil, err
 	}
+	oce.tracesdictURL, err = composeSignalURL(oCfg, oCfg.TracesEndpoint, "tracesdict")
+	if err != nil {
+		return nil, err
+	}
 
 	return exporterhelper.NewTracesExporter(ctx, set, cfg,
 		oce.pushTraces,

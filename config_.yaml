@@ -3,6 +3,7 @@ receivers:
     protocols:
       http:
         endpoint: localhost:14318
+        traces_dictionary_url_path: /v1/tracesdict
         
 processors:
   batch:

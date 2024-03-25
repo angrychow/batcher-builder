@@ -129,6 +129,9 @@ func (r *otlpReceiver) startHTTPServer(host component.Host) error {
 		httpMux.HandleFunc(r.cfg.HTTP.TracesURLPath, func(resp http.ResponseWriter, req *http.Request) {
 			handleTraces(resp, req, httpTracesReceiver)
 		})
+		httpMux.HandleFunc(r.cfg.HTTP.TracesDictionaryURLPath, func(resp http.ResponseWriter, req *http.Request) {
+			hanleTracesDictionary(resp, req)
+		})
 	}
 
 	if r.nextMetrics != nil {

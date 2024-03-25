@@ -3,6 +3,7 @@ package prefix_compressed_exporter // import "go.opentelemetry.io/collector/expo
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,13 +31,14 @@ import (
 
 type baseExporter struct {
 	// Input configuration.
-	config     *Config
-	client     *http.Client
-	tracesURL  string
-	metricsURL string
-	logsURL    string
-	logger     *zap.Logger
-	settings   component.TelemetrySettings
+	config        *Config
+	client        *http.Client
+	tracesURL     string
+	tracesdictURL string
+	metricsURL    string
+	logsURL       string
+	logger        *zap.Logger
+	settings      component.TelemetrySettings
 	// Default user-agent header.
 	userAgent string
 }
@@ -88,9 +90,10 @@ func (e *baseExporter) pushTraces(ctx context.Context, td ptrace.Traces) error {
 
 	var err error
 	var request []byte
+	var updates []ptraceotlp.UpdatesEntry
 	switch e.config.Encoding {
 	case EncodingJSON:
-		request, err = tr.MarshalJSON()
+		request, updates, err = tr.MarshalJSON()
 	case EncodingProto:
 		request, err = tr.MarshalProto()
 	default:
@@ -105,7 +108,33 @@ func (e *baseExporter) pushTraces(ctx context.Context, td ptrace.Traces) error {
 		return consumererror.NewPermanent(err)
 	}
 
-	return e.export(ctx, e.tracesURL, request, e.tracesPartialSuccessHandler)
+	var reqBody *bytes.Buffer = bytes.NewBuffer([]byte(``))
+
+	if updates != nil {
+		dictJson, err := json.Marshal(updates)
+		if err != nil {
+			return err
+		}
+		reqBody = bytes.NewBuffer(dictJson)
+	}
+
+	rsp, err := http.Post(e.tracesdictURL, "application/json", reqBody)
+
+	if err != nil {
+		panic("Synchronize Dictionary Failed")
+	}
+
+	if rsp.StatusCode < 400 && rsp.StatusCode >= 200 {
+		defer rsp.Body.Close()
+		content, err := io.ReadAll(rsp.Body)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(string(content))
+		return e.export(ctx, e.tracesURL, request, e.tracesPartialSuccessHandler)
+	} else {
+		panic("Synchronize Dictionary Failed")
+	}
 }
 
 func (e *baseExporter) pushMetrics(ctx context.Context, md pmetric.Metrics) error {

@@ -22,6 +22,8 @@ var fallbackMsg = []byte(`{"code": 13, "message": "failed to marshal error messa
 
 const fallbackContentType = "application/json"
 
+var attrDict = make(map[string]string)
+
 func revertSpan(iter map[string]interface{}) []map[string]interface{} {
 	ret := make([]map[string]interface{}, 0)
 	if iter["Son"] == nil {
@@ -39,7 +41,7 @@ func revertSpan(iter map[string]interface{}) []map[string]interface{} {
 			ret = append(ret, item.(map[string]interface{}))
 		} else {
 			for _, temp := range temps {
-				temp[item.(map[string]interface{})["AttrName"].(string)] = item.(map[string]interface{})["AttrValue"]
+				temp[item.(map[string]interface{})["AN"].(string)] = item.(map[string]interface{})["AV"]
 				ret = append(ret, temp)
 			}
 		}
@@ -88,14 +90,21 @@ func revertTraces(iters map[string]interface{}) {
 			if scopeSpan.(map[string]interface{})["spans"] == nil {
 				return
 			}
+			toffset := uint64(scopeSpan.(map[string]interface{})["tOffset"].(float64))
 			var spans_ = make([]interface{}, 0)
 			for _, span := range scopeSpan.(map[string]interface{})["spans"].([]interface{}) {
 				for _, item := range revertSpan(span.(map[string]interface{})) {
+					item["stun"] = uint64(item["stun"].(float64)) + toffset
+					item["etun"] = uint64(item["etun"].(float64)) + toffset
+					item["start_time_unix_nano"] = item["stun"]
+					item["end_time_unix_nano"] = item["etun"]
+					delete(item, "stun")
+					delete(item, "etun")
 					attributes := make([]Attribute_, 0)
 					for key := range item {
 						if regExp.MatchString(key) {
 							attributes = append(attributes, Attribute_{
-								Key: key[5:],
+								Key: attrDict[key[5:]],
 								Value: (func() interface{} {
 									if item[key] == "NONE" {
 										return nil
@@ -124,6 +133,25 @@ func revertTraces(iters map[string]interface{}) {
 			scopeSpan.(map[string]interface{})["spans"] = spans_
 		}
 	}
+}
+
+func hanleTracesDictionary(resp http.ResponseWriter, req *http.Request) {
+	enc, ok := readContentType(resp, req)
+	if !ok {
+		return
+	}
+
+	body, ok := readAndCloseBody(resp, req, enc)
+	if !ok {
+		return
+	}
+	var body_ []map[string]interface{}
+	json.Unmarshal(body, &body_)
+	for _, item := range body_ {
+		attrDict[item["value"].(string)] = item["key"].(string)
+	}
+	fmt.Println(string(body))
+	writeResponse(resp, "text/plain", http.StatusOK, []byte(`receive package`))
 }
 
 func handleTraces(resp http.ResponseWriter, req *http.Request, tracesReceiver *trace.Receiver) {

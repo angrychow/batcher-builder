@@ -24,6 +24,9 @@ type HTTPConfig struct {
 	// The URL path to receive traces on. If omitted "/v1/traces" will be used.
 	TracesURLPath string `mapstructure:"traces_url_path,omitempty"`
 
+	// The URL path to receive traces on. If omitted "/v1/tracesdict" will be used.
+	TracesDictionaryURLPath string `mapstructure:"traces_dictionary_url_path,omitempty"`
+
 	// The URL path to receive metrics on. If omitted "/v1/metrics" will be used.
 	MetricsURLPath string `mapstructure:"metrics_url_path,omitempty"`
 
